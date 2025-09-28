@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { GoogleGenAI, Type } from "@google/genai";
 
 // --- FROM types.ts ---
 type AnswerKey = 'A' | 'B' | 'C' | 'D';
@@ -14,25 +15,6 @@ interface TriviaQuestion {
   correctAnswer: AnswerKey;
 }
 
-// --- FROM utils/soundEffects.ts ---
-const CORRECT_SOUND_URL = 'https://actions.google.com/sounds/v1/positive/success.ogg';
-const INCORRECT_SOUND_URL = 'https://actions.google.com/sounds/v1/negative/failure.ogg';
-const CLICK_SOUND_URL = 'https://actions.google.com/sounds/v1/ui/button_press.ogg';
-const playSound = (src: string) => {
-    try {
-        const audio = new Audio(src);
-        audio.play().catch(error => {
-            console.warn("Sound playback was prevented by the browser:", error);
-        });
-    } catch (error) {
-        console.error("Error playing sound:", error);
-    }
-};
-const playCorrectSound = () => playSound(CORRECT_SOUND_URL);
-const playIncorrectSound = () => playSound(INCORRECT_SOUND_URL);
-const playClickSound = () => playSound(CLICK_SOUND_URL);
-
-
 // --- FROM components/QuizCard.tsx ---
 interface QuizCardProps {
   question: TriviaQuestion;
@@ -44,17 +26,25 @@ const QuizCard: React.FC<QuizCardProps> = ({ question, onAnswerSelect, selectedA
   const { question: questionText, options, correctAnswer } = question;
   const getButtonClass = (optionKey: AnswerKey): string => {
     const baseClass = "w-full text-left p-4 my-2 rounded-lg border-2 transition-all duration-300 ease-in-out transform focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-transparent";
+    
     if (!isAnswered) {
       return `${baseClass} bg-white/20 border-transparent hover:bg-white/30 hover:scale-105`;
     }
+
     const isCorrect = optionKey === correctAnswer;
     const isSelected = optionKey === selectedAnswer;
+
     if (isCorrect) {
-      return `${baseClass} bg-green-500 border-green-400 scale-105 shadow-lg ring-2 ring-white`;
+      // The correct answer button pulses to draw attention to it.
+      return `${baseClass} bg-green-500 border-green-400 scale-105 shadow-lg ring-2 ring-white animate-correct-pulse`;
     }
+    
     if (isSelected && !isCorrect) {
-      return `${baseClass} bg-red-500 border-red-400`;
+      // The incorrectly selected answer shakes.
+      return `${baseClass} bg-red-500 border-red-400 animate-incorrect-shake`;
     }
+    
+    // Other incorrect answers fade out.
     return `${baseClass} bg-white/10 border-transparent opacity-60`;
   };
   return (
@@ -141,20 +131,47 @@ const DifficultySelector: React.FC<DifficultySelectorProps> = ({ onSelectDifficu
 
 
 /**
- * Fetches a trivia question from the secure Vercel serverless function.
+ * Generates a trivia question by calling the Google Gemini API directly from the client.
  */
 async function generateTriviaQuestion(difficulty: Difficulty): Promise<TriviaQuestion> {
   try {
-    const response = await fetch(`/api/generate-trivia?difficulty=${difficulty}`);
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ 
-        error: 'Failed to fetch the question. The server might be unavailable.' 
-      }));
-      throw new Error(errorData.error || `Server error: ${response.statusText}`);
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      throw new Error("API key is not configured. This app cannot function without it.");
     }
 
-    const questionData: TriviaQuestion = await response.json();
+    const ai = new GoogleGenAI({ apiKey });
+
+    const triviaQuestionSchema = {
+      type: Type.OBJECT,
+      properties: {
+        question: { type: Type.STRING, description: "The trivia question text." },
+        options: {
+          type: Type.OBJECT,
+          properties: {
+            A: { type: Type.STRING },
+            B: { type: Type.STRING },
+            C: { type: Type.STRING },
+            D: { type: Type.STRING },
+          },
+          required: ["A", "B", "C", "D"]
+        },
+        correctAnswer: { type: Type.STRING, description: "Must be 'A', 'B', 'C', or 'D'." }
+      },
+      required: ["question", "options", "correctAnswer"]
+    };
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: `Generate a random, ${difficulty} level, challenging but fun trivia question with four multiple-choice options (A, B, C, D) and specify the correct answer key. The topic can be anything from science, history, pop culture, or geography.`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: triviaQuestionSchema,
+      },
+    });
+
+    const jsonText = response.text.trim();
+    const questionData = JSON.parse(jsonText);
 
     if (
       typeof questionData.question === 'string' &&
@@ -165,14 +182,26 @@ async function generateTriviaQuestion(difficulty: Difficulty): Promise<TriviaQue
       questionData.options.D &&
       ['A', 'B', 'C', 'D'].includes(questionData.correctAnswer)
     ) {
-      return questionData;
+      return questionData as TriviaQuestion;
     } else {
-      throw new Error("The server returned data in an unexpected format.");
+      throw new Error("The AI returned data in an unexpected format. Please try again.");
     }
-
   } catch (error) {
-    console.error("Error fetching trivia question from API:", error);
-    throw error;
+    console.error("Error generating trivia question from Gemini API:", error);
+    // Create user-friendly error messages
+    if (error instanceof Error) {
+        if (error.message.includes('API key not valid')) {
+            throw new Error('The API key is invalid. Please check your configuration.');
+        }
+        if (error.message.includes('Quota')) {
+            throw new Error('API quota exceeded. Please try again later or check your billing.');
+        }
+        // Re-throw other meaningful errors
+        throw error;
+    }
+    
+    // Generic fallback
+    throw new Error('An unexpected error occurred while generating the question.');
   }
 }
 
@@ -184,10 +213,8 @@ const App: React.FC = () => {
   const [selectedAnswer, setSelectedAnswer] = useState<AnswerKey | null>(null);
   const [isAnswered, setIsAnswered] = useState<boolean>(false);
   const [difficulty, setDifficulty] = useState<Difficulty | null>(null);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
 
   const fetchNewQuestion = useCallback(async () => {
-    if (!isMuted) playClickSound();
     if (!difficulty) return;
 
     setIsLoading(true);
@@ -199,12 +226,13 @@ const App: React.FC = () => {
       const newQuestion = await generateTriviaQuestion(difficulty);
       setQuestion(newQuestion);
     } catch (err) {
-      setError('Failed to generate a new question. Please try again.');
+      const errorMessage = (err instanceof Error) ? err.message : 'An unknown error occurred. Please try again.';
+      setError(errorMessage);
       console.error(err);
     } finally {
       setIsLoading(false);
     }
-  }, [difficulty, isMuted]);
+  }, [difficulty]);
 
   useEffect(() => {
     if (difficulty) {
@@ -219,9 +247,6 @@ const App: React.FC = () => {
     setIsAnswered(true);
     if (answer === question?.correctAnswer) {
       setScore(prevScore => prevScore + 1);
-      if (!isMuted) playCorrectSound();
-    } else {
-      if (!isMuted) playIncorrectSound();
     }
   };
   
@@ -235,15 +260,27 @@ const App: React.FC = () => {
       return <DifficultySelector onSelectDifficulty={handleDifficultySelect} />;
     }
     
-    if (isLoading) {
+    if (isLoading && !question) {
       return <LoadingSpinner />;
     }
 
     if (error) {
       return (
-        <div className="text-center text-red-300 bg-red-900/50 p-4 rounded-lg">
-          <p className="font-semibold">An Error Occurred</p>
-          <p>{error}</p>
+        <div className="text-center text-red-300 bg-red-900/50 p-6 rounded-lg animate-fade-in flex flex-col items-center gap-4">
+          <div className="w-12 h-12 flex items-center justify-center bg-red-500/50 rounded-full">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <p className="font-bold text-lg">Oops! Something went wrong.</p>
+          <p className="text-base text-red-200">{error}</p>
+          <button
+            onClick={fetchNewQuestion}
+            disabled={isLoading}
+            className="mt-2 px-6 py-2 bg-white text-indigo-600 font-bold rounded-full shadow-md hover:bg-indigo-100 transform transition-transform duration-200 ease-in-out hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? 'Retrying...' : 'Try Again'}
+          </button>
         </div>
       );
     }
@@ -262,19 +299,6 @@ const App: React.FC = () => {
     return null;
   }
 
-  const MuteIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-    </svg>
-  );
-
-  const UnmuteIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9l4 4m0-4l-4 4" />
-    </svg>
-  );
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex flex-col items-center justify-center p-4 font-sans text-white">
       <div className="w-full max-w-2xl mx-auto">
@@ -284,13 +308,14 @@ const App: React.FC = () => {
         </header>
 
         <main className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-6 md:p-8 relative min-h-[400px] flex flex-col justify-between">
+          {isLoading && question && <LoadingSpinner />}
           {difficulty && <Scoreboard score={score} />}
           
           <div className="flex-grow flex flex-col justify-center">
             {renderContent()}
           </div>
           
-          {difficulty && (
+          {difficulty && !error && (
             <div className="mt-6 text-center">
               <button
                 onClick={fetchNewQuestion}
@@ -303,19 +328,12 @@ const App: React.FC = () => {
           )}
         </main>
         <footer className="text-center mt-8 text-indigo-200/80 text-sm">
-          <div className="flex items-center justify-center space-x-4">
+          <div className="flex items-center justify-center">
             {difficulty && (
               <button onClick={() => setDifficulty(null)} className="underline hover:text-white transition-colors">
                 Change Difficulty
               </button>
             )}
-             <button
-              onClick={() => setIsMuted(prev => !prev)}
-              className="p-2 rounded-full hover:bg-white/10 transition-colors"
-              aria-label={isMuted ? "Unmute sounds" : "Mute sounds"}
-            >
-              {isMuted ? <UnmuteIcon /> : <MuteIcon />}
-            </button>
           </div>
           <p className="mt-2">&copy; {new Date().getFullYear()} AI Trivia Quiz. Endless fun, endless knowledge.</p>
         </footer>

@@ -21,6 +21,27 @@
   }
 }
 </script>
+<style>
+  @keyframes correct-answer-pulse {
+    0% { transform: scale(1.05); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1.05); }
+  }
+  @keyframes incorrect-answer-shake {
+    0%, 100% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+    20%, 40%, 60%, 80% { transform: translateX(4px); }
+  }
+  .animate-correct-pulse {
+    animation: correct-answer-pulse 0.5s ease-in-out;
+  }
+  .animate-incorrect-shake {
+    animation: incorrect-answer-shake 0.4s ease-in-out;
+  }
+  .text-shadow {
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+  }
+</style>
 <link rel="stylesheet" href="/index.css">
 </head>
   <body class="bg-gray-100">

@@ -1,0 +1,5 @@
+{
+  "name": "AI Trivia Quiz – Fun & Smart Quiz Game",
+  "description": "The AI Trivia Quiz app is a fun, interactive, and intelligent quiz game that generates endless trivia questions using Google Gemini AI. Instead of playing the same fixed set of questions, the app creates new random questions every time, making it fresh and engaging for all players.",
+  "requestFramePermissions": []
+}

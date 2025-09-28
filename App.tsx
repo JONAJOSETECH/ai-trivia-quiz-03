@@ -1,16 +1,147 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { TriviaQuestion, AnswerKey, Difficulty } from './types';
-import QuizCard from './components/QuizCard';
-import Scoreboard from './components/Scoreboard';
-import LoadingSpinner from './components/LoadingSpinner';
-import DifficultySelector from './components/DifficultySelector';
-import { playCorrectSound, playIncorrectSound, playClickSound } from './utils/soundEffects';
+
+// --- FROM types.ts ---
+type AnswerKey = 'A' | 'B' | 'C' | 'D';
+type Difficulty = 'Easy' | 'Medium' | 'Hard';
+interface TriviaQuestion {
+  question: string;
+  options: {
+    A: string;
+    B: string;
+    C: string;
+    D: string;
+  };
+  correctAnswer: AnswerKey;
+}
+
+// --- FROM utils/soundEffects.ts ---
+const CORRECT_SOUND_URL = 'https://actions.google.com/sounds/v1/positive/success.ogg';
+const INCORRECT_SOUND_URL = 'https://actions.google.com/sounds/v1/negative/failure.ogg';
+const CLICK_SOUND_URL = 'https://actions.google.com/sounds/v1/ui/button_press.ogg';
+const playSound = (src: string) => {
+    try {
+        const audio = new Audio(src);
+        audio.play().catch(error => {
+            console.warn("Sound playback was prevented by the browser:", error);
+        });
+    } catch (error) {
+        console.error("Error playing sound:", error);
+    }
+};
+const playCorrectSound = () => playSound(CORRECT_SOUND_URL);
+const playIncorrectSound = () => playSound(INCORRECT_SOUND_URL);
+const playClickSound = () => playSound(CLICK_SOUND_URL);
+
+
+// --- FROM components/QuizCard.tsx ---
+interface QuizCardProps {
+  question: TriviaQuestion;
+  onAnswerSelect: (answer: AnswerKey) => void;
+  selectedAnswer: AnswerKey | null;
+  isAnswered: boolean;
+}
+const QuizCard: React.FC<QuizCardProps> = ({ question, onAnswerSelect, selectedAnswer, isAnswered }) => {
+  const { question: questionText, options, correctAnswer } = question;
+  const getButtonClass = (optionKey: AnswerKey): string => {
+    const baseClass = "w-full text-left p-4 my-2 rounded-lg border-2 transition-all duration-300 ease-in-out transform focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-transparent";
+    if (!isAnswered) {
+      return `${baseClass} bg-white/20 border-transparent hover:bg-white/30 hover:scale-105`;
+    }
+    const isCorrect = optionKey === correctAnswer;
+    const isSelected = optionKey === selectedAnswer;
+    if (isCorrect) {
+      return `${baseClass} bg-green-500 border-green-400 scale-105 shadow-lg ring-2 ring-white`;
+    }
+    if (isSelected && !isCorrect) {
+      return `${baseClass} bg-red-500 border-red-400`;
+    }
+    return `${baseClass} bg-white/10 border-transparent opacity-60`;
+  };
+  return (
+    <div className="flex flex-col flex-grow">
+      <h2 className="text-2xl md:text-3xl font-semibold mb-6 text-center text-shadow">
+        {questionText}
+      </h2>
+      <div className="flex-grow flex flex-col justify-center">
+        {(Object.keys(options) as AnswerKey[]).map(key => (
+          <button
+            key={key}
+            onClick={() => onAnswerSelect(key)}
+            disabled={isAnswered}
+            className={getButtonClass(key)}
+          >
+            <span className="font-bold mr-3">{key}.</span> {options[key]}
+          </button>
+        ))}
+      </div>
+       {isAnswered && (
+          <div className="mt-4 text-center text-lg font-bold">
+            {selectedAnswer === correctAnswer ? (
+              <p className="text-green-300">🎉 Correct! 🎉</p>
+            ) : (
+              <p className="text-red-300">Sorry, that's not right. The correct answer was {correctAnswer}.</p>
+            )}
+          </div>
+        )}
+    </div>
+  );
+};
+
+
+// --- FROM components/Scoreboard.tsx ---
+interface ScoreboardProps {
+  score: number;
+}
+const Scoreboard: React.FC<ScoreboardProps> = ({ score }) => {
+  return (
+    <div className="absolute top-4 right-4 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full text-lg font-bold">
+      Score: <span className="text-yellow-300">{score}</span>
+    </div>
+  );
+};
+
+// --- FROM components/LoadingSpinner.tsx ---
+const LoadingSpinner: React.FC = () => {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm rounded-2xl z-10">
+      <div className="w-16 h-16 border-4 border-t-transparent border-white rounded-full animate-spin"></div>
+    </div>
+  );
+};
+
+
+// --- FROM components/DifficultySelector.tsx ---
+interface DifficultySelectorProps {
+  onSelectDifficulty: (difficulty: Difficulty) => void;
+}
+const DifficultySelector: React.FC<DifficultySelectorProps> = ({ onSelectDifficulty }) => {
+  const difficulties: Difficulty[] = ['Easy', 'Medium', 'Hard'];
+  const colors = {
+    Easy: 'bg-green-500 hover:bg-green-600 focus:ring-green-400',
+    Medium: 'bg-yellow-500 hover:bg-yellow-600 focus:ring-yellow-400',
+    Hard: 'bg-red-500 hover:bg-red-600 focus:ring-red-400',
+  }
+  return (
+    <div className="text-center flex flex-col items-center justify-center h-full animate-fade-in">
+      <h2 className="text-3xl font-bold mb-6">Select a Difficulty</h2>
+      <div className="flex flex-col md:flex-row gap-4 w-full max-w-md">
+        {difficulties.map((level) => (
+          <button
+            key={level}
+            onClick={() => onSelectDifficulty(level)}
+            className={`w-full px-8 py-4 text-white font-bold rounded-full shadow-lg transform transition-all duration-200 ease-in-out hover:scale-105 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-offset-transparent ${colors[level]}`}
+          >
+            {level}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 
 /**
  * Fetches a trivia question from the secure Vercel serverless function.
- * This function's logic was moved here to resolve a Vercel build issue.
- * @param difficulty The desired difficulty of the question.
- * @returns A promise that resolves to a TriviaQuestion object.
  */
 async function generateTriviaQuestion(difficulty: Difficulty): Promise<TriviaQuestion> {
   try {

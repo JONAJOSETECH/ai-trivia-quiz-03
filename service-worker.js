@@ -1,15 +1,9 @@
-const CACHE_NAME = 'ai-trivia-quiz-v4';
+const CACHE_NAME = 'ai-trivia-quiz-v5'; // Incremented version
 const urlsToCache = [
   '/',
   '/index.html',
   '/index.tsx',
   '/App.tsx',
-  '/types.ts',
-  '/components/QuizCard.tsx',
-  '/components/Scoreboard.tsx',
-  '/components/LoadingSpinner.tsx',
-  '/components/DifficultySelector.tsx',
-  '/utils/soundEffects.ts',
   '/manifest.json',
   '/icon.svg',
   'https://cdn.tailwindcss.com'

@@ -1,4 +1,3 @@
-
 const CACHE_NAME = 'ai-trivia-quiz-v4';
 const urlsToCache = [
   '/',
@@ -6,7 +5,7 @@ const urlsToCache = [
   '/index.tsx',
   '/App.tsx',
   '/types.ts',
-  '/services/geminiService.ts',
+  '/utils/api.ts',
   '/components/QuizCard.tsx',
   '/components/Scoreboard.tsx',
   '/components/LoadingSpinner.tsx',

@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import type { TriviaQuestion, AnswerKey, Difficulty } from './types';
-import { generateTriviaQuestion } from './services/geminiService';
+import { generateTriviaQuestion } from './utils/api';
 import QuizCard from './components/QuizCard';
 import Scoreboard from './components/Scoreboard';
 import LoadingSpinner from './components/LoadingSpinner';

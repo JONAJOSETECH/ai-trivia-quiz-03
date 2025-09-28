@@ -5,7 +5,6 @@ const urlsToCache = [
   '/index.tsx',
   '/App.tsx',
   '/types.ts',
-  '/utils/api.ts',
   '/components/QuizCard.tsx',
   '/components/Scoreboard.tsx',
   '/components/LoadingSpinner.tsx',

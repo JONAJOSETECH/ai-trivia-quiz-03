@@ -1,11 +1,49 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { TriviaQuestion, AnswerKey, Difficulty } from './types';
-import { generateTriviaQuestion } from './utils/api';
 import QuizCard from './components/QuizCard';
 import Scoreboard from './components/Scoreboard';
 import LoadingSpinner from './components/LoadingSpinner';
 import DifficultySelector from './components/DifficultySelector';
 import { playCorrectSound, playIncorrectSound, playClickSound } from './utils/soundEffects';
+
+/**
+ * Fetches a trivia question from the secure Vercel serverless function.
+ * This function's logic was moved here to resolve a Vercel build issue.
+ * @param difficulty The desired difficulty of the question.
+ * @returns A promise that resolves to a TriviaQuestion object.
+ */
+async function generateTriviaQuestion(difficulty: Difficulty): Promise<TriviaQuestion> {
+  try {
+    const response = await fetch(`/api/generate-trivia?difficulty=${difficulty}`);
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ 
+        error: 'Failed to fetch the question. The server might be unavailable.' 
+      }));
+      throw new Error(errorData.error || `Server error: ${response.statusText}`);
+    }
+
+    const questionData: TriviaQuestion = await response.json();
+
+    if (
+      typeof questionData.question === 'string' &&
+      typeof questionData.options === 'object' &&
+      questionData.options.A &&
+      questionData.options.B &&
+      questionData.options.C &&
+      questionData.options.D &&
+      ['A', 'B', 'C', 'D'].includes(questionData.correctAnswer)
+    ) {
+      return questionData;
+    } else {
+      throw new Error("The server returned data in an unexpected format.");
+    }
+
+  } catch (error) {
+    console.error("Error fetching trivia question from API:", error);
+    throw error;
+  }
+}
 
 const App: React.FC = () => {
   const [question, setQuestion] = useState<TriviaQuestion | null>(null);
